@@ -7,10 +7,9 @@ class Label(str):
 class Opcode:
 	def __init__(self, code, param=0):
 		self.code = opcode.opmap[code]
-		if self.code in opcode.hasconst
 		self.param = param
 	def __repr__(self):
-		return "%s(%d) %d" % (opcode.opname[self.code], self.code, self.param)
+		return "%s(%d) %s" % (opcode.opname[self.code], self.code, self.param)
 
 def parse(filename):
 	f = file(filename)
@@ -25,7 +24,7 @@ def parse(filename):
 			else:
 				code = line
 				param = None
-			yield Opcode(code, int(param))
+			yield Opcode(code, param)
 				
 
 class Assembler:
