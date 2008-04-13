@@ -1,0 +1,2 @@
+LOAD_CONST "Hello, World!"
+PRINT_ITEM
