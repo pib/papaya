@@ -1,0 +1,42 @@
+Python Bytecode notes:
+
+- Arguments MSB Last! (little endian), 16 bit
+- if an argument needs more than 16 bits, prefix the bytecode with an EXTENDED_ARG bytecode, 
+  adding 16 more significant bits
+  
+Closure, freevars, cellvars
+
+- cellvars are the names of variables which a containing function will pass into a closure
+- freevars are the names of variables which an enclosure will have passed into it
+  for example:
+	def f1(x):
+		l1 = lambda y: x+y
+		return l1
+		
+  In this case, f1.func_code.co_cellvars will be ('x',) and l1.co_freevars will be ('x',)
+  
+  Or for a more complicated example:
+  
+	def f2(x):
+		def f3(y):
+			l2 = lambda z: x+y+z
+			return l2
+		return f2
+		
+	f2 freevars = ()
+	f2 cellvars = ('x',)
+	f3 freevars = ('x',)
+	f3 cellvars = ('y',)
+	l2 freevars = ('y', 'x')
+	l2 cellvars = ()
+
+import...
+
+- for some reason "import math" is compiled into the following:
+  LOAD_CONST -1
+  LOAD_CONST None
+  IMPORT_NAME math
+  STORE_NAME math
+  
+  WTF?
+  Imports only work with those extra LOAD_CONSTs there...
