@@ -1,11 +1,13 @@
 import opcode
 import new
+from types import CodeType
 
 cmp_map = dict(zip(opcode.cmp_op, range(len(opcode.cmp_op))))
 
 class Label(str):
 	def __repr__(self):
 		return self+':'
+class End: pass
 class Arg:
 	def __init__(self, name):
 		if '=' in val:
@@ -17,12 +19,19 @@ class Arg:
 		self.name = name
 		
 class Opcode:
-	def __init__(self, opname, param=None):
-		self.opname = opname
-		self.opcode = opcode.opmap[opname]
+	def __init__(self, op, param=None):
+		if isinstance(op, str):
+			self.opname = op
+			self.opcode = opcode.opmap[op]
+		else:
+			self.opcode = op
+			self.opname = opcode.opname[op]
 		self.param = param
 	def __repr__(self):
-		return "%s(%d) %s" % (self.opname, self.opcode, self.param)
+		if self.opcode >= opcode.HAVE_ARGUMENT:
+			return "%s %s" % (self.opname, self.param)
+		else:
+			return self.opname
 	
 
 def parse(filename):
@@ -30,17 +39,21 @@ def parse(filename):
 	for line in f:
 		line = line.strip()
 		
-		if line.endswith(':'):
+		if line == 'end':
+			yield End()
+			continue
+		elif line.endswith(':'):
 			yield Label(line[:-1])
-			
-		if ' ' in line:
+			continue
+		elif ' ' in line:
 			code, param = line.split(' ', 1)
 		else:
 			code = line
 			param = None
 		if code == 'arg':
 			yield Arg(param)
-		yield Opcode(code, param)
+		else:
+			yield Opcode(code, param)
 
 class AsmCollection(dict):
 	def __init__(self):
@@ -62,16 +75,47 @@ class Assembler:
 		for c in code:
 			print "0x%02x" % ord(c),
 			print
-	def asm(self, input):
+	
+	def dis(self, co, func=False, indent=''):
+		out = ''
+		if func:
+			out = "function %s\n" % ', '.join(co.co_varnames[:co.co_argcount])
+		i = 0
+		code = co.co_code
+		length = len(code)
+		while i < length:
+			op = ord(code[i])
+			if op >= opcode.HAVE_ARGUMENT:
+				arg = ord(code[i+1]) + (ord(code[i+2]) << 8)
+				i += 2
+			else:
+				arg = None
+			opc = self.decode_op(co, op, arg, indent)
+			out += "%s%s\n" % (indent, opc)
+			i += 1
+		if func:
+			out += "end"
+		return out
+		
+	def asm(self, input, args={}):
+		self.input = input # store in case we need to use this internally
+		
 		codestring = ''
 		lnotab = ''
-		for op in input:
+		while True:
+			try:
+				op = input.next()
+			except StopIteration:
+				break
+			if isinstance(op, End):
+				break
+				
 			line_inc = 1
 			code = self.encode_op(op)
 			codestring += code
 			lnotab += chr(len(code)) + chr(1)
 		co = new.code(
-			0, # argcount
+			len(args), # argcount
 			len(self.varname.items), # nlocals
 			0, # stacksize
 			0, # flags
@@ -104,7 +148,12 @@ class Assembler:
 			if op in opcode.hascompare:
 				arg = cmp_map[argument]
 			elif op in opcode.hasconst:
-				arg = self.const[eval(argument)]
+				if argument == 'function':
+					# recursively build a new code object to go into the consts
+					fn = self.asm(self.input)
+					arg = self.const[fn]
+				else:
+					arg = self.const[eval(argument)]
 			elif op in opcode.hasfree:
 				arg = self.free[argument]
 			elif op in opcode.hasjabs:
@@ -123,6 +172,32 @@ class Assembler:
 				out = chr(opcode.EXTENDED_ARG) + ext_arg + out
 			out += arg
 		return out
+		
+	def decode_op(self, co, op, argument, indent):
+		if op >= opcode.HAVE_ARGUMENT:
+			if op in opcode.hascompare:
+				arg = cmp_op[argument]
+			elif op in opcode.hasconst:
+				arg = co.co_consts[argument]
+				if arg.__class__ == CodeType:
+					arg = self.dis(arg, True, indent + '    ')
+				else:
+					arg = repr(arg)
+			elif op in opcode.hasfree:
+				arg = co.co_freevars[argument]
+			elif op in opcode.hasjabs:
+				pass
+			elif op in opcode.hasjrel:
+				pass
+			elif op in opcode.haslocal:
+				arg = co.co_varnames[argument]
+			elif op in opcode.hasname:
+				arg = co.varnames[argument]
+			else:
+				arg = argument
+		else:
+			arg = argument
+		return Opcode(op, arg)
 			
 #if __name__ == '__main__':
 parser = parse('test.pya')
