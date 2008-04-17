@@ -1,25 +1,29 @@
 """
 Python Assembler/Disassembler Copyright 2008 Paul Bonser <paul@paulbonser.com>
 
-Pass a .pya or .pyc filename in as a parameter. If you pass a .pya file, it will be assembled 
-into the matching .pyc file. If you pass in a .pyc file, it will be disassembled into a .pyd 
-file (to avoid overwriting an already existing .pya).
+Pass a .pya or .pyc filename in as a parameter. If you pass a .pya file, it will be assembled  into
+the matching .pyc file. If you pass in a .pyc file, it will be disassembled into a .pyd  file (to
+avoid overwriting an already existing .pya).
 
-Support for jumping to labels and variable argument lists is not yet in place, but it will be 
-soon. You could also use this code as the backend for a compiler, but it's not really very well 
-suited for that yet, and quite messy since this was a quick prototype. I plan on cleaning it up,
-and/or rewriting it, really! Right now, it's about impossible to do anything useful with loops
-or jumps so you probably shouldn't try, unless you are insane.
+For a good example of how to write a .pya file from scratch, write some code in a .py file, compile
+it, and then decompile it to see what code is generated.
 
-The syntax consists of a Python opcode name (LOAD_CONST, CALL_FUNCTION, etc) optionally followed
-by a parameter (if that opcode takes a parameter). In cases where the opcode takes an index to
-a value in one of the code object's tuples (co_consts, co_varnames, etc.), give the literal 
-value or name and the assembler will automatically build the corresponding tuples for you.
+Support for variable argument lists is not yet in place, but it will be  soon. You could also use
+this code as the backend for a compiler, but it's not really very well  suited for that yet, and
+quite messy since this was a quick prototype. I plan on cleaning it up, and/or rewriting it, really!
 
-To load a function with a LOAD_CONST opcode, put "function", followed by a comma-separated list
-of parameter names (so they can be added to the co_varnames tuple), and on the following lines
-put the content of the function as with the other lines (probably indented for easier reading).
-After the final line of the function put the word 'end' on a single line by itself.
+The syntax consists of a Python opcode name (LOAD_CONST, CALL_FUNCTION, etc) optionally followed by
+a parameter (if that opcode takes a parameter). In cases where the opcode takes an index to a value
+in one of the code object's tuples (co_consts, co_varnames, etc.), give the literal  value or name
+and the assembler will automatically build the corresponding tuples for you.
+
+When using a JUMP_* instruction, use a label, and then at the location where you want to jump
+(immediately before the instruction to jump to, on its own line), put the label, followed by a colon.
+
+To load a function with a LOAD_CONST opcode, put "function", followed by a comma-separated list of
+parameter names (so they can be added to the co_varnames tuple), and on the following lines put the
+content of the function as with the other lines (probably indented for easier reading). After the
+final line of the function put the word 'end' on a single line by itself.
 
 
     This program is free software: you can redistribute it and/or modify
@@ -34,6 +38,14 @@ After the final line of the function put the word 'end' on a single line by itse
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    
+TODO:
+ * Encode CALL_FUNCTION parameters from a comma separated list of positional args and keyword args
+ * Use Opcode objects as intermediate code for both assembly and disassembly, so that Opcode
+   objects can be generated from a different source (a compiler, of course)
+ * general cleanup
+
+
 """
 
 import opcode
@@ -47,16 +59,16 @@ import marshal
 cmp_map = dict(zip(opcode.cmp_op, range(len(opcode.cmp_op))))
 
 class BlankLine: 
-	def __init__(self, line):
+	def __init__(self, line=0):
 		self.linenumber = line
 class Label:
-	def __init__(self, label, line):
+	def __init__(self, label, line=0):
 		self.label = label
 		self.linenumber = line
 	def __str__(self):
 		return self.label
 class End:
-	def __init__(self, line):
+	def __init__(self, line=0):
 		self.linenumber = line
 	def __repr__(self):
 		return 'end'
@@ -303,7 +315,7 @@ class Pya:
 						params = []
 					# recursively build a new code object to go into the consts
 					asm = Pya(self.filename)
-					fn = asm.asm(self.input, params, self.linenumber+1)
+					fn = asm.asm(self.input, params)
 					self.linenumber += asm.linenumber - self.linenumber
 					arg = self.const[fn]
 				else:
@@ -323,6 +335,7 @@ class Pya:
 			elif op in opcode.hasname:
 				arg = self.name[argument]
 			else:
+				print op_obj
 				arg = int(argument)
 				
 			ext_arg, arg = self.encode_param(arg)
@@ -334,7 +347,7 @@ class Pya:
 	def decode_op(self, co, op, argument, indent):
 		if op >= opcode.HAVE_ARGUMENT:
 			if op in opcode.hascompare:
-				arg = cmp_op[argument]
+				arg = opcode.cmp_op[argument]
 			elif op in opcode.hasconst:
 				arg = co.co_consts[argument]
 				if arg.__class__ == CodeType:

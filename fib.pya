@@ -1,0 +1,46 @@
+# Example: fibonacci generator.
+	stack 1
+	LOAD_CONST function n
+		# if n is 0, return 0
+		stack 4
+		LOAD_FAST n
+		LOAD_CONST 0
+		COMPARE_OP ==
+		JUMP_IF_FALSE not_zero
+		POP_TOP
+		LOAD_CONST 0
+		RETURN_VALUE
+		
+		# else if n is 1, return 1
+	not_zero:
+		POP_TOP
+		LOAD_FAST n
+		LOAD_CONST 1
+		COMPARE_OP ==
+		JUMP_IF_FALSE not_one
+		POP_TOP
+		LOAD_CONST 1
+		RETURN_VALUE
+		
+		# else n is fib(n-1) + fib(n-2)
+	not_one:
+		POP_TOP
+		LOAD_GLOBAL fib
+		LOAD_FAST n
+		LOAD_CONST 1
+		BINARY_SUBTRACT
+		CALL_FUNCTION 1
+		
+		LOAD_GLOBAL fib
+		LOAD_FAST n
+		LOAD_CONST 2
+		BINARY_SUBTRACT
+		CALL_FUNCTION 1
+		BINARY_ADD
+		
+		RETURN_VALUE
+	end
+	MAKE_FUNCTION 0
+	STORE_NAME fib
+	LOAD_CONST None
+	RETURN_VALUE
