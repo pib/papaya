@@ -46,52 +46,73 @@ import marshal
 
 cmp_map = dict(zip(opcode.cmp_op, range(len(opcode.cmp_op))))
 
-class Label(str):
+class BlankLine: 
+	def __init__(self, line):
+		self.linenumber = line
+class Label:
+	def __init__(self, label, line):
+		self.label = label
+		self.linenumber = line
+	def __str__(self):
+		return self.label
+class End:
+	def __init__(self, line):
+		self.linenumber = line
 	def __repr__(self):
-		return self+':'
-class End: pass
-class Arg:
-	def __init__(self, name):
-		if '=' in val:
-			name, self.def_val = name.split('=')
-			name = name.strip()
-			self.def_val = self.def_val.strip()
-		else:
-			self.def_val = None
-		self.name = name
+		return 'end'
+class RawStr(str):
+	def __repr__(self):
+		return self
 		
 class Opcode:
-	def __init__(self, op, param=None):
+	def __init__(self, op, param=None, label='', indent=''):
+		self.indent = indent
+		self.label = label
 		if isinstance(op, str):
 			self.opname = op
-			self.opcode = opcode.opmap[op]
+			if op == 'stack':
+				self.opcode = -1
+			else:
+				self.opcode = opcode.opmap[op]
 		else:
 			self.opcode = op
 			self.opname = opcode.opname[op]
 		self.param = param
+		self.linenumber = None
 	def __repr__(self):
+		rep = ''
+		if self.label:
+			rep = "%s:\n" % self.label
 		if self.opcode >= opcode.HAVE_ARGUMENT:
-			return "%s %s" % (self.opname, self.param)
+			rep += "%s%s %s" % (self.indent, self.opname, self.param)
 		else:
-			return self.opname
+			rep += "%s%s" % (self.indent, self.opname)
+		return rep
 	
 def parse(filename):
 	f = file(filename)
+	linenumber = 0
 	for line in f:
+		linenumber += 1
 		line = line.strip()
 		
-		if line == 'end':
-			yield End()
+		if line == '' or line.startswith('#'):
+			yield BlankLine(linenumber)
+			continue
+		elif line == 'end':
+			yield End(linenumber)
 			continue
 		elif line.endswith(':'):
-			yield Label(line[:-1])
+			yield Label(line[:-1], linenumber)
 			continue
 		elif ' ' in line:
 			code, param = line.split(' ', 1)
 		else:
 			code = line
 			param = None
-		yield Opcode(code, param)
+		op = Opcode(code, param)
+		op.linenumber = linenumber
+		yield op
 
 class AsmCollection(dict):
 	def __init__(self):
@@ -118,17 +139,28 @@ class Pya:
 			print "0x%02x" % ord(c),
 			print
 		
-	def asm(self, input, args=None, linenumber=1):
+	def asm(self, input, args=None):
 		self.input = input # store in case we need to use this internally
-		self.linenumber = linenumber
+
+		firstline = 0
 		
 		if args:
 			self.varname.add(args)
+			func = True
 		else:
 			args = []
+			func = False
 		
-		codestring = ''
+		labelmap = {}
+		jrelmap = {}
+		jabsmap = {}
+		#import pdb
+		#pdb.set_trace()
+		stacksize = 0
+		codestring = []
 		lnotab = ''
+		lastline = 0
+		lastbyte = 0
 		while True:
 			try:
 				op = input.next()
@@ -136,49 +168,114 @@ class Pya:
 				break
 			if isinstance(op, End):
 				break
-				
-			startline = self.linenumber
+		
+			if isinstance(op, BlankLine):
+				continue
+		
+			if isinstance(op, Label):
+				op_str = str(op)
+				labelmap[op_str] = label = len(codestring)
+				if op_str in jabsmap:
+					for jump in jabsmap[op_str]:
+						extarg, arg = self.encode_param(label)
+						codestring[jump+1:jump+3] = arg
+				if op_str in jrelmap:
+					for jump in jrelmap[op_str]:
+						rel = label - (jump+3)
+						extarg, arg = self.encode_param(rel)
+						codestring[jump+1:jump+3] = arg
+				continue
+			
+			# not a real opcode, just used to set the max stack size
+			if op.opname == 'stack':
+				stacksize = int(op.param)
+				continue
+			
+			if op.opcode in opcode.hasjabs:
+				if op.param in labelmap:
+					op.param = labelmap[op.param]
+				else:
+					jumps = jabsmap.setdefault(op.param, list())
+					jumps.append(len(codestring))
+			elif op.opcode in opcode.hasjrel:
+				jumps = jrelmap.setdefault(op.param, list())
+				jumps.append(len(codestring))
+			
 			code = self.encode_op(op)
 			codestring += code
-			self.linenumber += 1
-			lnotab += chr(len(code)) + chr(self.linenumber-startline)
 			
+			if not firstline:
+				firstline = op.linenumber
+				lastline = firstline
+				lastbyte = len(code)
+			else:
+				lnotab += chr(lastbyte) + chr(op.linenumber-lastline)
+				lastbyte = len(code)
+				lastline = op.linenumber
+		codestring = ''.join(codestring)
+		if func:
+			name = '<func>'
+		else:
+			name = '<module>'
 		co = new.code(
 			len(args), # argcount
 			len(self.varname.items), # nlocals
-			0, # stacksize
+			stacksize, # stacksize
 			0, # flags
 			codestring, # codestring
 			tuple(self.const.items), #constants
 			tuple(self.name.items), # names
 			tuple(self.varname.items), #varnames
 			self.filename, #filename
-			'test', # name
-			linenumber, # first line number
+			name, # name
+			firstline, # first line number
 			lnotab, # lnotab
 			)
 		return co
 
-	def dis(self, co, func=False, indent=''):
-		out = ''
+	def dis(self, co, func=False, indent='    '):
+		out = []
 		if func:
-			out = "function %s\n" % ', '.join(co.co_varnames[:co.co_argcount])
+			out = [RawStr("function %s\n" % ', '.join(co.co_varnames[:co.co_argcount]))]
+		
+		out.append(RawStr("%sstack %d" % (indent, co.co_stacksize)))
+		
 		i = 0
 		code = co.co_code
 		length = len(code)
+		bytemap = {}
+		jumpmap = {}
+		labels = 0
 		while i < length:
 			op = ord(code[i])
 			if op >= opcode.HAVE_ARGUMENT:
 				arg = ord(code[i+1]) + (ord(code[i+2]) << 8)
-				i += 2
 			else:
 				arg = None
 			opc = self.decode_op(co, op, arg, indent)
-			out += "%s%s\n" % (indent, opc)
-			i += 1
+			
+			if opc.opcode in opcode.hasjabs:
+				jumpmap[arg] = opc
+			elif opc.opcode in opcode.hasjrel:
+				jumpmap[i+3+arg] = opc
+			
+			bytemap[i] = opc
+			out.append(opc)
+			if op >= opcode.HAVE_ARGUMENT:
+				i += 3
+			else:
+				i += 1
 		if func:
-			out += "end"
-		return out
+			out.append(End())
+		
+		jumps = jumpmap.items()
+		jumps.sort()
+		for jump, opc in jumps:
+			labelname = "label%d" % labels
+			opc.param = labelname
+			bytemap[jump].label = labelname
+			labels += 1
+		return "\n".join([repr(i) for i in out])
 
 						
 	def encode_param(self, param):
@@ -203,7 +300,7 @@ class Pya:
 						_, params = argument.split(' ', 1)
 						params = [param.strip() for param in params.split(',')]
 					else:
-						params = None
+						params = []
 					# recursively build a new code object to go into the consts
 					asm = Pya(self.filename)
 					fn = asm.asm(self.input, params, self.linenumber+1)
@@ -214,8 +311,12 @@ class Pya:
 			elif op in opcode.hasfree:
 				arg = self.free[argument]
 			elif op in opcode.hasjabs:
+				if isinstance(argument, str):
+					argument = 0
 				arg = int(argument)
 			elif op in opcode.hasjrel:
+				if isinstance(argument, str):
+					argument = 0
 				arg = int(argument)
 			elif op in opcode.haslocal:
 				arg = self.varname[argument]
@@ -254,7 +355,7 @@ class Pya:
 				arg = argument
 		else:
 			arg = argument
-		return Opcode(op, arg)
+		return Opcode(op, arg, '', indent)
 
 def read_pyc(fname):
 	f = open(fname, "rb")
