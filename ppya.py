@@ -335,7 +335,6 @@ class PPya:
 			elif op in opcode.hasname:
 				arg = self.name[argument]
 			else:
-				print op_obj
 				arg = int(argument)
 				
 			ext_arg, arg = self.encode_param(arg)
