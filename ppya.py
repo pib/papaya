@@ -25,30 +25,21 @@ parameter names (so they can be added to the co_varnames tuple), and on the foll
 content of the function as with the other lines (probably indented for easier reading). After the
 final line of the function put the word 'end' on a single line by itself.
 
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    
-TODO:
- * Encode CALL_FUNCTION parameters from a comma separated list of positional args and keyword args
- * Use Opcode objects as intermediate code for both assembly and disassembly, so that Opcode
-   objects can be generated from a different source (a compiler, of course)
- * general cleanup
- * Unit tests
-
-
 """
 
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ 
 import opcode
 import new
 from types import CodeType
