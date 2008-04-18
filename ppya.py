@@ -320,7 +320,15 @@ class PPya:
 					self.linenumber += asm.linenumber - self.linenumber
 					arg = self.const[fn]
 				else:
-					arg = self.const[eval(argument)]
+					if isinstance(argument, str):
+						# since some items aren't hashable, we key off the string, 
+						# but store the eval of the string
+						arg = self.const[argument]
+						self.const.items[arg] = eval(argument)
+					else:
+						# If the opcodes are being fed in from elsewhere, 
+						# it could also be an actual object
+						arg = argument
 			elif op in opcode.hasfree:
 				arg = self.free[argument]
 			elif op in opcode.hasjabs:
