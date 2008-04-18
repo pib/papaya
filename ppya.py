@@ -1,5 +1,5 @@
 """
-Python Assembler/Disassembler Copyright 2008 Paul Bonser <paul@paulbonser.com>
+Paul's Python Assembler/Disassembler Copyright 2008 Paul Bonser <paul@paulbonser.com>
 
 Pass a .pya or .pyc filename in as a parameter. If you pass a .pya file, it will be assembled  into
 the matching .pyc file. If you pass in a .pyc file, it will be disassembled into a .pyd  file (to
@@ -44,6 +44,7 @@ TODO:
  * Use Opcode objects as intermediate code for both assembly and disassembly, so that Opcode
    objects can be generated from a different source (a compiler, of course)
  * general cleanup
+ * Unit tests
 
 
 """
@@ -138,7 +139,7 @@ class AsmCollection(dict):
 		for val in list:
 			self[val]
 
-class Pya:
+class PPya:
 	def __init__(self, filename='<none>'):
 		self.const = AsmCollection()
 		self.free = AsmCollection()
@@ -314,7 +315,7 @@ class Pya:
 					else:
 						params = []
 					# recursively build a new code object to go into the consts
-					asm = Pya(self.filename)
+					asm = PPya(self.filename)
 					fn = asm.asm(self.input, params)
 					self.linenumber += asm.linenumber - self.linenumber
 					arg = self.const[fn]
@@ -394,7 +395,7 @@ if __name__ == '__main__':
 	if len(sys.argv) < 2:
 		print "Usage %s file.[pya|pyc]\n" % sys.argv[0]
 		exit(1)
-	asm = Pya(sys.argv[1])
+	asm = PPya(sys.argv[1])
 	base, ext = sys.argv[1].split('.')
 	if ext == 'pya':
 		parser = parse(sys.argv[1])
