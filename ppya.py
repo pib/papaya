@@ -8,10 +8,6 @@ avoid overwriting an already existing .pya).
 For a good example of how to write a .pya file from scratch, write some code in a .py file, compile
 it, and then decompile it to see what code is generated.
 
-Support for variable argument lists is not yet in place, but it will be  soon. You could also use
-this code as the backend for a compiler, but it's not really very well  suited for that yet, and
-quite messy since this was a quick prototype. I plan on cleaning it up, and/or rewriting it, really!
-
 The syntax consists of a Python opcode name (LOAD_CONST, CALL_FUNCTION, etc) optionally followed by
 a parameter (if that opcode takes a parameter). In cases where the opcode takes an index to a value
 in one of the code object's tuples (co_consts, co_varnames, etc.), give the literal  value or name
@@ -20,10 +16,10 @@ and the assembler will automatically build the corresponding tuples for you.
 When using a JUMP_* instruction, use a label, and then at the location where you want to jump
 (immediately before the instruction to jump to, on its own line), put the label, followed by a colon.
 
-To load a function with a LOAD_CONST opcode, put "function", followed by a comma-separated list of
-parameter names (so they can be added to the co_varnames tuple), and on the following lines put the
-content of the function as with the other lines (probably indented for easier reading). After the
-final line of the function put the word 'end' on a single line by itself.
+To load a function with a LOAD_CONST opcode, put "def funcname(...)", following the function
+definition for Python, minus the ending colon, and on the following lines put the content of the
+function as with the other lines (probably indented for easier reading). After the final line of the
+function put the word 'end' on a single line by itself.
 
 """
 
@@ -40,371 +36,280 @@ final line of the function put the word 'end' on a single line by itself.
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  
-import opcode
 import new
 from types import CodeType
 from py_compile import MAGIC
 import time
 import struct
 import marshal
+import peak.util.assembler as asm
 
-cmp_map = dict(zip(opcode.cmp_op, range(len(opcode.cmp_op))))
+hasint = (asm.UNPACK_SEQUENCE, asm.DUP_TOPX, asm.BUILD_TUPLE, asm.BUILD_LIST, asm.RAISE_VARARGS, 
+          asm.MAKE_FUNCTION, asm.BUILD_SLICE)
 
-class BlankLine: 
-	def __init__(self, line=0):
-		self.linenumber = line
 class Label:
-	def __init__(self, label, line=0):
-		self.label = label
-		self.linenumber = line
-	def __str__(self):
-		return self.label
-class End:
-	def __init__(self, line=0):
-		self.linenumber = line
-	def __repr__(self):
-		return 'end'
-class RawStr(str):
-	def __repr__(self):
-		return self
-		
-class Opcode:
-	def __init__(self, op, param=None, label='', indent=''):
-		self.indent = indent
-		self.label = label
-		if isinstance(op, str):
-			self.opname = op
-			if op == 'stack':
-				self.opcode = -1
-			else:
-				self.opcode = opcode.opmap[op]
-		else:
-			self.opcode = op
-			self.opname = opcode.opname[op]
-		self.param = param
-		self.linenumber = None
-	def __repr__(self):
-		rep = ''
-		if self.label:
-			rep = "%s:\n" % self.label
-		if self.opcode >= opcode.HAVE_ARGUMENT:
-			rep += "%s%s %s" % (self.indent, self.opname, self.param)
-		else:
-			rep += "%s%s" % (self.indent, self.opname)
-		return rep
-	
-def parse(filename):
-	f = file(filename)
-	linenumber = 0
-	for line in f:
-		linenumber += 1
-		line = line.strip()
-		
-		if line == '' or line.startswith('#'):
-			yield BlankLine(linenumber)
-			continue
-		elif line == 'end':
-			yield End(linenumber)
-			continue
-		elif line.endswith(':'):
-			yield Label(line[:-1], linenumber)
-			continue
-		elif ' ' in line:
-			code, param = line.split(' ', 1)
-		else:
-			code = line
-			param = None
-		op = Opcode(code, param)
-		op.linenumber = linenumber
-		yield op
+    def __init__(self, label, line=0):
+        self.label = label
+        self.linenumber = line
+    def __str__(self):
+        return self.label
 
-class AsmCollection(dict):
-	def __init__(self):
-		dict.__init__(self)
-		self.items = []
-	def __missing__(self, item):
-		arg = self[item] = len(self.items)
-		self.items.append(item)
-		return arg
-	def add(self, list):
-		for val in list:
-			self[val]
+class End:
+    def __init__(self, line=0, indent=0):
+        self.linenumber = line
+        self.indent = indent
+    def __repr__(self):
+        return '%send' % ('    ' * (self.indent-1))
+        
+class Opcode:
+    def __init__(self, op, arg='', label='', indent=0):
+        self.indent = indent
+        self.label = label
+        if isinstance(op, str):
+            self.name = op
+            self.opcode = asm.opmap[op]
+        else:
+            self.opcode = op
+            self.name = asm.opname[op]
+        self.arg = arg
+        self.linenumber = None
+    def __repr__(self):
+        rep = ''
+        if self.label:
+            rep = "%s%s:\n" % (('    '*self.indent)[:-2], self.label)
+        rep += "%s%s %s" % ('    '*self.indent, self.name, self.arg)
+        return rep
+    
+def parse(filename):
+    f = file(filename)
+    linenumber = 0
+    for line in f:
+        linenumber += 1
+        line = line.strip()
+        
+        if line == '' or line.startswith('#'):
+            continue
+        elif line == 'end':
+            yield End(linenumber)
+            continue
+        elif line.endswith(':'):
+            yield Label(line[:-1], linenumber)
+            continue
+        elif ' ' in line:
+            code, arg = line.split(' ', 1)
+        else:
+            code = line
+            arg = None
+        try:
+            op = Opcode(code, arg)
+        except KeyError:
+            print "ERROR: Undefined opcode '%s' at line %d\n" % (code, linenumber)
+            raise
+        op.linenumber = linenumber
+        yield op
 
 class PPya:
-	def __init__(self, filename='<none>'):
-		self.const = AsmCollection()
-		self.free = AsmCollection()
-		self.name = AsmCollection()
-		self.varname = AsmCollection()
-		self.filename = filename
-		self.linenumber = 1
-	def printcode(self, code):
-		for c in code:
-			print "0x%02x" % ord(c),
-			print
-		
-	def asm(self, input, args=None):
-		self.input = input # store in case we need to use this internally
+    def __init__(self, filename='<none>'):
+        self.filename = filename
+        
+    def assemble(self, input, fn_def=None):
+        if fn_def:
+            code = asm.Code.from_function(fn_def)
+        else:
+            code = asm.Code()
+            code.co_name = '<module>'
+            code.co_flags &= ~asm.CO_NEWLOCALS # this seems to break modules
+        code.co_filename = self.filename
+        
+        labelmap = {}
+        jumpmap = {}
+        last_closure_count = 0
+        
+        for op in input:
+            if isinstance(op, End): break
+        
+            # fillin any forward references to this label, save this label's location
+            if isinstance(op, Label):
+                op_str = str(op)
+                labelmap[op_str] = label = code.here()
+                if op_str in jumpmap:
+                    for jump in jumpmap[op_str]:
+                        jump()
+                continue
+            
+            code.set_lineno(op.linenumber)
+            op_fn = getattr(code, op.name)
+            arg = op.arg
+            
+            # handle jumping to labels or forward references
+            if op.opcode in asm.hasjabs or op.opcode in asm.hasjrel:
+                if op.name.startswith('SETUP'):
+                    op_fn() # BytecodeAssembler takes care of these
+                    continue
+                elif arg in labelmap:
+                    arg = labelmap[arg]
+                else:
+                    jumps = jumpmap.setdefault(arg, list())
+                    jump = op_fn()
+                    jumps.append(jump)
+                    continue
+            elif op.opcode in asm.hasconst:
+                if arg.startswith('def'):
+                    # create an empty function object with the signature
+                    l = {}
+                    try:
+                        exec ('%s: pass' % arg) in {}, l
+                    except SyntaxError:
+                        print "Invalid function definition at line %d\n" % op.linenumber
+                        raise
+                    func_def = l.values()[0]
+                    
+                    # recursively build a new code object to go into the consts
+                    pya = PPya(self.filename)
+                    fn = pya.assemble(input, func_def)
+                    arg = fn
+                    last_closure_count = len(fn.co_freevars)
+                else:
+                    try:
+                        arg = eval(arg)
+                    except SyntaxError:
+                        print "Syntax error trying to parse literal: '%s' at line %d\n" % (arg, op.linenumber)
+                        raise
+            elif op.name.startswith('CALL_FUNCTION'):
+                if ',' in arg:
+                    pos, kw = [int(s) for s in arg.split(',')]
+                else:
+                    pos = int(arg)
+                    kw = 0
+                op_fn(pos, kw)
+                continue
+            elif op.opcode == asm.MAKE_CLOSURE:
+                arg = int(arg)
+                op_fn(arg, last_closure_count)
+            elif op.opcode in hasint:
+                arg = int(arg)
 
-		firstline = 0
-		
-		if args:
-			self.varname.add(args)
-			func = True
-		else:
-			args = []
-			func = False
-		
-		labelmap = {}
-		jrelmap = {}
-		jabsmap = {}
-		#import pdb
-		#pdb.set_trace()
-		stacksize = 0
-		codestring = []
-		lnotab = ''
-		lastline = 0
-		lastbyte = 0
-		while True:
-			try:
-				op = input.next()
-			except StopIteration:
-				break
-			if isinstance(op, End):
-				break
-		
-			if isinstance(op, BlankLine):
-				continue
-		
-			if isinstance(op, Label):
-				op_str = str(op)
-				labelmap[op_str] = label = len(codestring)
-				if op_str in jabsmap:
-					for jump in jabsmap[op_str]:
-						extarg, arg = self.encode_param(label)
-						codestring[jump+1:jump+3] = arg
-				if op_str in jrelmap:
-					for jump in jrelmap[op_str]:
-						rel = label - (jump+3)
-						extarg, arg = self.encode_param(rel)
-						codestring[jump+1:jump+3] = arg
-				continue
-			
-			# not a real opcode, just used to set the max stack size
-			if op.opname == 'stack':
-				stacksize = int(op.param)
-				continue
-			
-			if op.opcode in opcode.hasjabs:
-				if op.param in labelmap:
-					op.param = labelmap[op.param]
-				else:
-					jumps = jabsmap.setdefault(op.param, list())
-					jumps.append(len(codestring))
-			elif op.opcode in opcode.hasjrel:
-				jumps = jrelmap.setdefault(op.param, list())
-				jumps.append(len(codestring))
-			
-			code = self.encode_op(op)
-			codestring += code
-			
-			if not firstline:
-				firstline = op.linenumber
-				lastline = firstline
-				lastbyte = len(code)
-			else:
-				lnotab += chr(lastbyte) + chr(op.linenumber-lastline)
-				lastbyte = len(code)
-				lastline = op.linenumber
-		codestring = ''.join(codestring)
-		if func:
-			name = '<func>'
-		else:
-			name = '<module>'
-		co = new.code(
-			len(args), # argcount
-			len(self.varname.items), # nlocals
-			stacksize, # stacksize
-			0, # flags
-			codestring, # codestring
-			tuple(self.const.items), #constants
-			tuple(self.name.items), # names
-			tuple(self.varname.items), #varnames
-			self.filename, #filename
-			name, # name
-			firstline, # first line number
-			lnotab, # lnotab
-			)
-		return co
+            if op.opcode >= asm.HAVE_ARGUMENT:
+                op_fn(arg)
+            else:
+                op_fn()
+        
+        return code.code()
 
-	def dis(self, co, func=False, indent='    '):
-		out = []
-		if func:
-			out = [RawStr("function %s\n" % ', '.join(co.co_varnames[:co.co_argcount]))]
-		
-		out.append(RawStr("%sstack %d" % (indent, co.co_stacksize)))
-		
-		i = 0
-		code = co.co_code
-		length = len(code)
-		bytemap = {}
-		jumpmap = {}
-		labels = 0
-		while i < length:
-			op = ord(code[i])
-			if op >= opcode.HAVE_ARGUMENT:
-				arg = ord(code[i+1]) + (ord(code[i+2]) << 8)
-			else:
-				arg = None
-			opc = self.decode_op(co, op, arg, indent)
-			
-			if opc.opcode in opcode.hasjabs:
-				jumpmap[arg] = opc
-			elif opc.opcode in opcode.hasjrel:
-				jumpmap[i+3+arg] = opc
-			
-			bytemap[i] = opc
-			out.append(opc)
-			if op >= opcode.HAVE_ARGUMENT:
-				i += 3
-			else:
-				i += 1
-		if func:
-			out.append(End())
-		
-		jumps = jumpmap.items()
-		jumps.sort()
-		for jump, opc in jumps:
-			labelname = "label%d" % labels
-			opc.param = labelname
-			bytemap[jump].label = labelname
-			labels += 1
-		return "\n".join([repr(i) for i in out])
+    def disassemble(self, co, func=False, indent=1):
+        out = []
+        if func:
+            argcount = co.co_argcount
+            fndef = "def %s(%s" % (co.co_name, (', '.join(co.co_varnames[:argcount])))
+            varargs = co.co_flags & asm.CO_VARARGS
+            kwargs = co.co_flags & asm.CO_VARKEYWORDS
+            if varargs:
+                fndef += ', *%s' % co.co_varnames[argcount:argcount+1]
+                argcount += 1
+            if kwargs:
+                fndef += ', **%s' % co.co_varnames[argcount:argcount+1]
+            fndef += ')'
+            out.append(fndef)
+        
+        i = 0
+        code = co.co_code
+        length = len(code)
+        bytemap = {}
+        jumpmap = {}
+        labels = 0
+        while i < length:
+            op = ord(code[i])
+            if op >= asm.HAVE_ARGUMENT:
+                arg = ord(code[i+1]) + (ord(code[i+2]) << 8)
+            else:
+                arg = None
+            opc = self.decode_op(co, op, arg, indent)
+            
+            if opc.opcode in asm.hasjabs and not opc.name.startswith('SETUP'):
+                jumpmap[arg] = opc
+            elif opc.opcode in asm.hasjrel and not opc.name.startswith('SETUP'):
+                jumpmap[i+3+arg] = opc
+            
+            bytemap[i] = opc
+            out.append(opc)
+            if op >= asm.HAVE_ARGUMENT:
+                i += 3
+            else:
+                i += 1
+        if func:
+            out.append(End(0,indent))
+        
+        jumps = jumpmap.items()
+        jumps.sort()
+        for jump, opc in jumps:
+            labelname = "label%d" % labels
+            opc.arg = labelname
+            bytemap[jump].label = labelname
+            labels += 1
+        return "\n".join([str(i) for i in out])
 
-						
-	def encode_param(self, param):
-		if param > 65535:
-			ext_arg = self.encode_param(param >> 16)
-			param = param & 65535
-		else: 
-			ext_arg = 0
-		arg = chr(param & 255) + chr(param >> 8)
-		return (ext_arg, arg)
-		
-	def encode_op(self, op_obj):
-		argument = op_obj.param
-		op = op_obj.opcode
-		out = chr(op)
-		if op >= opcode.HAVE_ARGUMENT:
-			if op in opcode.hascompare:
-				arg = cmp_map[argument]
-			elif op in opcode.hasconst:
-				if argument.startswith('function'):
-					if ' ' in argument:
-						_, params = argument.split(' ', 1)
-						params = [param.strip() for param in params.split(',')]
-					else:
-						params = []
-					# recursively build a new code object to go into the consts
-					asm = PPya(self.filename)
-					fn = asm.asm(self.input, params)
-					self.linenumber += asm.linenumber - self.linenumber
-					arg = self.const[fn]
-				else:
-					if isinstance(argument, str):
-						# since some items aren't hashable, we key off the string, 
-						# but store the eval of the string
-						arg = self.const[argument]
-						self.const.items[arg] = eval(argument)
-					else:
-						# If the opcodes are being fed in from elsewhere, 
-						# it could also be an actual object
-						arg = argument
-			elif op in opcode.hasfree:
-				arg = self.free[argument]
-			elif op in opcode.hasjabs:
-				if isinstance(argument, str):
-					argument = 0
-				arg = int(argument)
-			elif op in opcode.hasjrel:
-				if isinstance(argument, str):
-					argument = 0
-				arg = int(argument)
-			elif op in opcode.haslocal:
-				arg = self.varname[argument]
-			elif op in opcode.hasname:
-				arg = self.name[argument]
-			else:
-				arg = int(argument)
-				
-			ext_arg, arg = self.encode_param(arg)
-			if ext_arg:
-				out = chr(opcode.EXTENDED_ARG) + ext_arg + out
-			out += arg
-		return out
-		
-	def decode_op(self, co, op, argument, indent):
-		if op >= opcode.HAVE_ARGUMENT:
-			if op in opcode.hascompare:
-				arg = opcode.cmp_op[argument]
-			elif op in opcode.hasconst:
-				arg = co.co_consts[argument]
-				if arg.__class__ == CodeType:
-					arg = self.dis(arg, True, indent + '    ')
-				else:
-					arg = repr(arg)
-			elif op in opcode.hasfree:
-				arg = co.co_freevars[argument]
-			elif op in opcode.hasjabs:
-				arg = argument
-			elif op in opcode.hasjrel:
-				arg = argument
-			elif op in opcode.haslocal:
-				arg = co.co_varnames[argument]
-			elif op in opcode.hasname:
-				arg = co.co_names[argument]
-			else:
-				arg = argument
-		else:
-			arg = argument
-		return Opcode(op, arg, '', indent)
+    def decode_op(self, co, op, argument, indent):
+        if op >= asm.HAVE_ARGUMENT:
+            if op in asm.hascompare:
+                arg = asm.cmp_op[argument]
+            elif op in asm.hasconst:
+                arg = co.co_consts[argument]
+                if arg.__class__ == CodeType:
+                    arg = self.disassemble(arg, True, indent + 1)
+                else:
+                    arg = repr(arg)
+            elif op in asm.hasfree:
+                arg = co.co_freevars[argument]
+            elif op in asm.hasjabs:
+                arg = argument
+            elif op in asm.hasjrel:
+                arg = argument
+            elif op in asm.haslocal:
+                arg = co.co_varnames[argument]
+            elif op in asm.hasname:
+                arg = co.co_names[argument]
+            else:
+                arg = argument
+        else:
+            arg = argument
+        return Opcode(op, arg, '', indent)
 
 def read_pyc(fname):
-	f = open(fname, "rb")
-	magic = f.read(4)
-	if magic != MAGIC:
-		raise Exception('Magic number mismatch. This .pyc is from a different version of Python')
-	moddate = f.read(4)
-	modtime = time.asctime(time.localtime(struct.unpack('L', moddate)[0]))
-	code = marshal.load(f)
-	f.close()
-	return magic, moddate, modtime, code
+    f = open(fname, "rb")
+    magic = f.read(4)
+    if magic != MAGIC:
+        raise Exception('Magic number mismatch. This .pyc is from a different version of Python')
+    moddate = f.read(4)
+    modtime = time.asctime(time.localtime(struct.unpack('L', moddate)[0]))
+    code = marshal.load(f)
+    f.close()
+    return magic, moddate, modtime, code
 
 def write_pyc(fname, code):
-	f = open(fname, 'wb')
-	f.write(MAGIC)
-	f.write(struct.pack('L', int(time.time())))
-	marshal.dump(code, f)
-	f.close()
+    f = open(fname, 'wb')
+    f.write(MAGIC)
+    f.write(struct.pack('L', int(time.time())))
+    marshal.dump(code, f)
+    f.close()
 
 if __name__ == '__main__':
-	import sys
+    import sys
 
-	if len(sys.argv) < 2:
-		print "Usage %s file.[pya|pyc]\n" % sys.argv[0]
-		exit(1)
-	asm = PPya(sys.argv[1])
-	base, ext = sys.argv[1].split('.')
-	if ext == 'pya':
-		parser = parse(sys.argv[1])
-		code = asm.asm(parser)
-		write_pyc(base+'.pyc', code)
-	elif ext == 'pyc':
-		magic, moddate, modtime, code = read_pyc(sys.argv[1])
-		out = asm.dis(code)
-		f = open(base+'.pyd', 'w')
-		f.write(out)
-		f.close()
-	else:
-		print ".pya or .pyc files only, please!"
-		
+    if len(sys.argv) < 2:
+        print "Usage %s file.[pya|pyc]\n" % sys.argv[0]
+        exit(1)
+    pya = PPya(sys.argv[1])
+    base, ext = sys.argv[1].split('.')
+    if ext == 'pya':
+        parser = parse(sys.argv[1])
+        code = pya.assemble(parser)
+        write_pyc(base+'.pyc', code)
+    elif ext == 'pyc':
+        magic, moddate, modtime, code = read_pyc(sys.argv[1])
+        out = pya.disassemble(code)
+        f = open(base+'.pyd', 'w')
+        f.write(out)
+        f.close()
+    else:
+        print ".pya or .pyc files only, please!"
+        

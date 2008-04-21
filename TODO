@@ -1,12 +1,15 @@
 TODO:
- * add *args and **kwargs support
- * Encode CALL_FUNCTION parameters as the comma separated counts of positional
-   args and keyword args, rather than the single number it is now
  * add support for generator functions (if it has a YIELD instruction, it's a generator)
- * add support for specifying the name of a function
  * Make the first co_consts item either a doc-comment or None as per the
    documentation. This also means that doc-comments should be supported.
  * Use Opcode objects as intermediate code for both assembly and disassembly, so that Opcode
    objects can be generated from a different source (a compiler, of course)
  * general cleanup
  * Unit tests
+   
+DONE:
+ * add *args and **kwargs support
+ * Encode CALL_FUNCTION parameters as the comma separated counts of positional
+   args and keyword args, rather than the single number it is now
+ * add support for specifying the name of a function
+ * Fix disassemble() to handle *args and **kwargs
