@@ -1,5 +1,9 @@
 TODO:
+ Very important
+ * Get forward jumping working properly again (grr.. dang BytecodeAssembler being too smart for 
+   its own good)
  * add support for generator functions (if it has a YIELD instruction, it's a generator)
+ Later
  * Make the first co_consts item either a doc-comment or None as per the
    documentation. This also means that doc-comments should be supported.
  * Use Opcode objects as intermediate code for both assembly and disassembly, so that Opcode

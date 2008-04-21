@@ -137,6 +137,10 @@ class PPya:
                         jump()
                 continue
             
+            # Python doesn't like functions with plusses in their names
+            if '+' in op.name:
+                op.name = op.name.replace('+', '_')
+            
             code.set_lineno(op.linenumber)
             op_fn = getattr(code, op.name)
             arg = op.arg
@@ -292,7 +296,7 @@ def write_pyc(fname, code):
     marshal.dump(code, f)
     f.close()
 
-if __name__ == '__main__':
+def main():
     import sys
 
     if len(sys.argv) < 2:
@@ -312,4 +316,6 @@ if __name__ == '__main__':
         f.close()
     else:
         print ".pya or .pyc files only, please!"
-        
+
+if __name__ == '__main__':
+	main()        
