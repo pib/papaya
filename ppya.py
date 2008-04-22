@@ -74,10 +74,14 @@ class Opcode:
         self.arg = arg
         self.linenumber = None
     def __repr__(self):
+    	if self.arg is None:
+    		arg = ''
+    	else:
+    		arg = self.arg
         rep = ''
         if self.label:
             rep = "%s%s:\n" % (('    '*self.indent)[:-2], self.label)
-        rep += "%s%s %s" % ('    '*self.indent, self.name, self.arg)
+        rep += "%s%s %s" % ('    '*self.indent, self.name, arg)
         return rep
     
 def parse(filename):
@@ -154,7 +158,11 @@ class PPya:
                     arg = labelmap[arg]
                 else:
                     jumps = jumpmap.setdefault(arg, list())
-                    jump = op_fn()
+                    try:
+                        jump = op_fn()
+                    except AssertionError:
+                        print "Error: dead code at line %d:" % op.linenumber, op
+                        raise
                     jumps.append(jump)
                     continue
             elif op.opcode in asm.hasconst:
@@ -194,7 +202,11 @@ class PPya:
                 arg = int(arg)
 
             if op.opcode >= asm.HAVE_ARGUMENT:
-                op_fn(arg)
+                try:
+                    op_fn(arg)
+                except AssertionError:
+                    print "Error: Dead code at line %d:" % op.linenumber, op
+                    raise
             else:
                 op_fn()
         
@@ -229,10 +241,14 @@ class PPya:
                 arg = None
             opc = self.decode_op(co, op, arg, indent)
             
-            if opc.opcode in asm.hasjabs and not opc.name.startswith('SETUP'):
-                jumpmap[arg] = opc
+            if opc.name.startswith('SETUP'):
+            	opc.arg = None # BytecodeAssembler handles blocks for us
+            elif opc.opcode in asm.hasjabs and not opc.name.startswith('SETUP'):
+            	loc = jumpmap.setdefault(arg, list())
+                loc.append(opc)
             elif opc.opcode in asm.hasjrel and not opc.name.startswith('SETUP'):
-                jumpmap[i+3+arg] = opc
+            	loc = jumpmap.setdefault(i+3+arg, list())
+                loc.append(opc)
             
             bytemap[i] = opc
             out.append(opc)
@@ -245,9 +261,10 @@ class PPya:
         
         jumps = jumpmap.items()
         jumps.sort()
-        for jump, opc in jumps:
+        for jump, opcs in jumps:
             labelname = "label%d" % labels
-            opc.arg = labelname
+            for opc in opcs:
+            	opc.arg = labelname
             bytemap[jump].label = labelname
             labels += 1
         return "\n".join([str(i) for i in out])
