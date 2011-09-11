@@ -280,7 +280,10 @@ class PPya:
                 else:
                     arg = repr(arg)
             elif op in asm.hasfree:
-                arg = co.co_freevars[argument]
+                try:
+                    arg = co.co_freevars[argument]
+                except IndexError:
+                    arg = co.co_cellvars[argument]
             elif op in asm.hasjabs:
                 arg = argument
             elif op in asm.hasjrel:

@@ -1,13 +1,10 @@
 # Example: fibonacci generator.
-	stack 1
-	LOAD_CONST function n
+	LOAD_CONST def fib(n)
 		# if n is 0, return 0
-		stack 4
 		LOAD_FAST n
 		LOAD_CONST 0
 		COMPARE_OP ==
-		JUMP_IF_FALSE not_zero
-		POP_TOP
+		JUMP_IF_FALSE_OR_POP not_zero
 		LOAD_CONST 0
 		RETURN_VALUE
 		
@@ -17,8 +14,7 @@
 		LOAD_FAST n
 		LOAD_CONST 1
 		COMPARE_OP ==
-		JUMP_IF_FALSE not_one
-		POP_TOP
+		JUMP_IF_FALSE_OR_POP not_one
 		LOAD_CONST 1
 		RETURN_VALUE
 		
