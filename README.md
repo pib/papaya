@@ -11,6 +11,9 @@ For a bit more information on Python bytecodes, see the documentation
 for the [python dis module][dis], and my [first blog post about
 Papaya][papaya].
 
+[dis]: http://docs.python.org/library/dis.html
+[papaya]: http://probablyprogramming.com/2008/04/18/ppya-python-assembler
+
 ## Note:
 
 This code has been basically untouched for 4 years, aside from a
