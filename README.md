@@ -7,6 +7,10 @@ disassemble, respectively.
 See the top of ppya.py for some information on how to write code in
 Papaya assembly. See fib.pya and test.pya for simple examples.
 
+For a bit more information on Python bytecodes, see the documentation
+for the [python dis module][dis], and my [first blog post about
+Papaya][papaya].
+
 ## Note:
 
 This code has been basically untouched for 4 years, aside from a
